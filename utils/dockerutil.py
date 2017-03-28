@@ -47,6 +47,7 @@ NOMAD_TASK_NAME = 'NOMAD_TASK_NAME'
 NOMAD_JOB_NAME = 'NOMAD_JOB_NAME'
 NOMAD_ALLOC_NAME = 'NOMAD_ALLOC_NAME'
 
+
 class DockerUtil:
     __metaclass__ = Singleton
 
@@ -72,19 +73,25 @@ class DockerUtil:
         # Try to detect if we are on Swarm
         self.fetch_swarm_state()
 
-        # Try to detect if we are on ECS or Nomad
+        # Try to detect if an orchestrator is running
         self._is_ecs = False
         self._is_nomad = False
+
         try:
             containers = self.client.containers()
             for co in containers:
+                log.warning("bla")
                 if '/ecs-agent' in co.get('Names', ''):
                     self._is_ecs = True
                     break
-                elif 'NOMAD_ALLOC_ID' in co.get('Config', {}).get('Env', ''):
+                if self._detect_nomad(co):
                     self._is_nomad = True
+                    log.warning("found nomad")
+                    # FIXME : will break if no nomad jobs are running, should try again later
                     break
-        except Exception:
+
+        except Exception as e:
+            log.warning("Error while detecting orchestrator: %s" % e)
             pass
 
         # Build include/exclude patterns for containers
@@ -139,6 +146,16 @@ class DockerUtil:
 
     def is_nomad(self):
         return self._is_nomad
+
+    def _detect_nomad(self, container):
+        log.warning("testing nomad")
+        is_found = False
+        inspect_info = self.client.inspect_container(container.get('Id', ''))
+        for env in inspect_info.get('Config', {}).get('Env', []):
+            if env.startswith('NOMAD_'):
+                is_found = True
+                break
+        return is_found
 
     def is_swarm(self):
         if self.swarm_node_state == 'pending':
@@ -460,18 +477,23 @@ class DockerUtil:
                     return [str(name).lstrip('/')]
         return [co.get('Id')[:12]]
 
-    @classmethod
-    def extract_nomad_tags(cls, co):
+    def extract_nomad_tags(self, co):
         tags = []
         try:
-            envvars = co.get('Config', {}).get('Env', {})
+            inspect_info = self.client.inspect_container(co.get('Id', ''))
+            envvars = inspect_info.get('Config', {}).get('Env', {})
             for var in envvars:
                 if var.startswith(NOMAD_TASK_NAME):
                     tags.append('nomad_task:%s' % var[len(NOMAD_TASK_NAME)+1:])
                 elif var.startswith(NOMAD_JOB_NAME):
                     tags.append('nomad_job:%s' % var[len(NOMAD_JOB_NAME)+1:])
                 elif var.startswith(NOMAD_ALLOC_NAME):
-                    tags.append('nomad_alloc:%s' % var[len(NOMAD_ALLOC_NAME)+1:var.index('[')])
+                    try:
+                        start = var.index('.', len(NOMAD_ALLOC_NAME)) + 1
+                        end = var.index('[')
+                        tags.append('nomad_group:%s' % var[start:end])
+                    except ValueError:
+                        pass
         except Exception as e:
             log.warning("Error while parsing Nomad tags: %s" % str(e))
         finally:

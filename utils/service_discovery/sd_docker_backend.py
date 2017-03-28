@@ -291,7 +291,7 @@ class SDDockerBackend(AbstractSDBackend):
                 tags.append('swarm_service:%s' % swarm_svc)
 
         elif Platform.is_nomad():
-            nomad_tags = DockerUtil.extract_nomad_tags(state.inspect_container(c_id))
+            nomad_tags = DockerUtil().extract_nomad_tags(state.inspect_container(c_id))
             if nomad_tags:
                 tags.extend(list(nomad_tags))
 
