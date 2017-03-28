@@ -433,10 +433,10 @@ class DockerUtil:
 
         raise MountException("Cannot find Docker cgroup directory. Be sure your system is supported.")
 
-    @classmethod
-    def image_tag_extractor(cls, entity, key):
-        if "Image" in entity:
-            split = entity["Image"].split(":")
+    def image_tag_extractor(self, entity, key):
+        name = self.image_name_extractor(entity)
+        if len(name):
+            split = name.split(":")
             if len(split) <= key:
                 return None
             elif len(split) > 2:
@@ -462,6 +462,19 @@ class DockerUtil:
             if len(split) > 1:
                 return [split[key]]
 
+        return None
+
+    def image_name_extractor(self, co):
+        if "Image" in co:
+            image = co.get('Image', '')
+            if image.startswith('sha256:'):
+                # Nomad puts sha in name instead of image name
+                try:
+                    return self.client.inspect_image(image).get('RepoTags')[0]
+                except Exception:
+                    pass
+            else:
+                return image
         return None
 
     @classmethod
