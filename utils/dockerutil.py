@@ -77,6 +77,8 @@ class DockerUtil:
         self._is_ecs = False
         self._is_nomad = False
 
+        self._image_sha_to_name_mapping = {}
+
         try:
             containers = self.client.containers()
             for co in containers:
@@ -470,7 +472,12 @@ class DockerUtil:
             if image.startswith('sha256:'):
                 # Nomad puts sha in name instead of image name
                 try:
-                    return self.client.inspect_image(image).get('RepoTags')[0]
+                    if image in self._image_sha_to_name_mapping:
+                        return self._image_sha_to_name_mapping[image]
+                    else:
+                        name = self.client.inspect_image(image).get('RepoTags')[0]
+                        self._image_sha_to_name_mapping[image] = name
+                        return name
                 except Exception:
                     pass
             else:
